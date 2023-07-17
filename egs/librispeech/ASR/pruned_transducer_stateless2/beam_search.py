@@ -251,7 +251,11 @@ def fast_beam_search_nbest(
     blank_penalty: float = 0.0,
     return_timestamps: bool = False,
     allow_partial: bool = False,
-) -> Union[List[List[int]], DecodingResults]:
+    return_nbest_fsa: bool = False,
+) -> Union[ List[List[int]],
+            DecodingResults,
+            Tuple[List[List[int]], Nbest],
+            Tuple[DecodingResults, Nbest] ]:
     """It limits the maximum number of symbols per frame to 1.
 
     The process to get the results is:
@@ -324,10 +328,15 @@ def fast_beam_search_nbest(
 
     best_path = k2.index_fsa(nbest.fsa, max_indexes)
 
-    if not return_timestamps:
-        return get_texts(best_path)
+    if return_timestamps:
+        ans = get_texts_with_timestamp(best_path)
     else:
-        return get_texts_with_timestamp(best_path)
+        ans = get_texts(best_path)
+
+    if return_nbest_fsa:
+        ans = tuple((ans, nbest))
+
+    return ans
 
 
 def fast_beam_search_nbest_oracle(

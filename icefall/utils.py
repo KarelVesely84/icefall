@@ -336,6 +336,39 @@ def get_texts_with_timestamp(
     )
 
 
+def convert_nbests(
+    nbest_fsa: 'Nbest',
+    sp: spm.SentencePieceProcessor,
+    top_k: int = 200, # 200 is deafult preset
+) -> List[List[Tuple[str, float]]]:
+    """ Convert nbests in FSA representation to human readble form.
+    """
+
+    nbests_out = []
+
+    # TODO: 'top_k' not yet in outdated icefall
+    # nbest = nbest_fsa.top_k(top_k)
+
+    num_cuts = nbest_fsa.shape.dim0
+    tot_scores = nbest_fsa.tot_scores()
+    texts_i32_sp = k2.nbest._get_texts(nbest_fsa.fsa, return_ragged=False)
+    texts = sp.decode(texts_i32_sp) # what format ?
+
+    ii = 0
+    for cut_idx in list(range(num_cuts)):
+        len_nbest_list = len(tot_scores[cut_idx])
+        text_nbest_list = texts[ii : ii + len_nbest_list]
+        scores_nbest_list = tot_scores[cut_idx].detach().cpu().numpy()
+
+        assert len_nbest_list == len(scores_nbest_list)
+        nbest_list = list(zip(text_nbest_list, scores_nbest_list))
+        nbests_out.append(nbest_list)
+
+        ii += len_nbest_list
+
+    return nbests_out
+
+
 def get_alignments(best_paths: k2.Fsa, kind: str) -> List[List[int]]:
     """Extract labels or aux_labels from the best-path FSAs.
 
@@ -434,7 +467,9 @@ def store_transcripts(
     Returns:
       Return None.
     """
-    with open(filename, "w") as f:
+
+
+    with open(filename, "w", encoding="utf-8") as f:
         for cut_id, ref, hyp in texts:
             print(f"{cut_id}:\tref={ref}", file=f)
             print(f"{cut_id}:\thyp={hyp}", file=f)
@@ -456,7 +491,7 @@ def store_transcripts_and_timestamps(
     Returns:
       Return None.
     """
-    with open(filename, "w") as f:
+    with open(filename, "w", encoding="utf-8") as f:
         for cut_id, ref, hyp, time_ref, time_hyp in texts:
             print(f"{cut_id}:\tref={ref}", file=f)
             print(f"{cut_id}:\thyp={hyp}", file=f)
@@ -486,6 +521,31 @@ def store_transcripts_and_timestamps(
                     # each element is a float number
                     s = "[" + ", ".join(["%0.3f" % i for i in time_hyp]) + "]"
                 print(f"{cut_id}:\ttimestamp_hyp={s}", file=f)
+
+def store_nbest_lists(
+    filename: Pathlike,
+    nbests: Iterable[Tuple[str, List[Tuple[str, float]]]],
+) -> None:
+    """ Save n-best output to a file. The file format is:
+        \"{cut_id} {nbest_rank} {hyp_text} {score}\"
+
+    Args:
+      filename:
+        File to save the nbest results to.
+      nbests:
+        An iterable of tuples. The first element is the cut_id,
+        and the inner List contains the n-best hypothesis and
+        its total scores (1 per utterance).
+    Returns:
+      Return None.
+    """
+    with open(filename, "w", encoding="utf-8") as fd:
+        for cut_id, nbest_list in nbests:
+
+            nbest_list_ = sorted(nbest_list, key=lambda x: x[1], reverse=True)
+
+            for nbest_rank, (hyp_text, score) in enumerate(nbest_list_):
+                print(f"{cut_id} {nbest_rank+1} {score:.6f} {hyp_text}", file=fd)
 
 
 def write_error_stats(
